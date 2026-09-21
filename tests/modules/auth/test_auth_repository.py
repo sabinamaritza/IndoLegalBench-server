@@ -9,7 +9,8 @@ Validates:
 - delete_sessions_by_user_id
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -90,11 +91,9 @@ def test_repo_update_user_role(repo):
 
 
 def test_repo_deactivate_and_delete_sessions(repo, in_memory_db):
-    user = repo.create_user(
-        "Charlie", "charlie@veritask.ai", Role.AUTHOR, "sub_charlie"
-    )
+    user = repo.create_user("Charlie", "charlie@veritask.ai", Role.AUTHOR, "sub_charlie")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     session1 = Session(
         user_id=user.id,
         expires_at=now + timedelta(hours=1),

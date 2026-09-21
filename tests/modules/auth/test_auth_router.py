@@ -11,13 +11,15 @@ Validates:
 
 import uuid
 from unittest.mock import MagicMock
+
 import pytest
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from app.modules.auth.models import User
-from app.modules.auth.router import get_auth_service, router as admin_router
+from app.modules.auth.router import get_auth_service
+from app.modules.auth.router import router as admin_router
 from app.modules.auth.service import AuthService
 from app.shared.exceptions import (
     ConflictError,
@@ -72,9 +74,7 @@ def sample_user():
 def client(app_instance, mock_service, admin_current_user):
     app_instance.dependency_overrides[get_auth_service] = lambda: mock_service
     app_instance.dependency_overrides[get_current_user] = lambda: admin_current_user
-    app_instance.dependency_overrides[require_roles(Role.ADMIN)] = (
-        lambda: admin_current_user
-    )
+    app_instance.dependency_overrides[require_roles(Role.ADMIN)] = lambda: admin_current_user
 
     with TestClient(app_instance) as test_client:
         yield test_client
@@ -95,9 +95,7 @@ def test_get_users_without_filter_returns_all(client, mock_service, sample_user)
     mock_service.list_users.assert_called_once_with(is_active=None)
 
 
-@pytest.mark.parametrize(
-    "query_param,expected_bool", [("true", True), ("false", False)]
-)
+@pytest.mark.parametrize("query_param,expected_bool", [("true", True), ("false", False)])
 def test_get_users_with_is_active_filter(
     client, mock_service, sample_user, query_param, expected_bool
 ):
@@ -158,9 +156,7 @@ def test_create_user_duplicate_email_conflict_409(client, mock_service):
 
 
 def test_create_user_not_registered_in_zitadel_422(client, mock_service):
-    mock_service.create_member.side_effect = ValidationError(
-        "User not registered in Zitadel IdP"
-    )
+    mock_service.create_member.side_effect = ValidationError("User not registered in Zitadel IdP")
 
     payload = {
         "email": "unregistered@veritask.ai",
@@ -264,7 +260,9 @@ def test_non_admin_roles_rejected_403(app_instance, mock_service, forbidden_role
 
     with TestClient(app_instance) as non_admin_client:
         assert non_admin_client.get("/admin/users").status_code == status.HTTP_403_FORBIDDEN
-        assert non_admin_client.post("/admin/users", json={}).status_code == status.HTTP_403_FORBIDDEN
+        assert (
+            non_admin_client.post("/admin/users", json={}).status_code == status.HTTP_403_FORBIDDEN
+        )
         assert (
             non_admin_client.patch(f"/admin/users/{uuid.uuid4()}", json={}).status_code
             == status.HTTP_403_FORBIDDEN

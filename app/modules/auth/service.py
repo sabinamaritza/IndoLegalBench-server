@@ -8,23 +8,22 @@ exception dari app.shared.exceptions.
 """
 
 import uuid
-from typing import Optional, List
 
 from app.modules.auth.models import User
 from app.modules.auth.repository import AuthRepository
 from app.modules.auth.schemas import UserCreateRequest, UserUpdateRoleRequest
-from app.shared.security import Role, CurrentUser
-from app.shared.exceptions import ConflictError, ValidationError, NotFoundError
+from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
+from app.shared.security import CurrentUser
 
 
 class AuthService:
     def __init__(self, repo: AuthRepository):
         self.repo = repo
 
-    def list_users(self, is_active: Optional[bool] = None) -> List[User]:
+    def list_users(self, is_active: bool | None = None) -> list[User]:
         return self.repo.get_users(is_active=is_active)
 
-    def _verify_user_in_zitadel(self, email: str) -> Optional[str]:
+    def _verify_user_in_zitadel(self, email: str) -> str | None:
         if "unregistered" in email:
             return None
         return f"zitadel_sub_{email}"
@@ -38,10 +37,7 @@ class AuthService:
             raise ValidationError("User not registered in Zitadel IdP")
 
         return self.repo.create_user(
-            name=payload.name,
-            email=payload.email,
-            role=payload.role,
-            zitadel_sub=zitadel_sub
+            name=payload.name, email=payload.email, role=payload.role, zitadel_sub=zitadel_sub
         )
 
     def update_member_role(self, user_id: uuid.UUID, payload: UserUpdateRoleRequest) -> User:

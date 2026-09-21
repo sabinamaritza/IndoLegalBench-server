@@ -8,6 +8,7 @@ Validates:
 """
 
 import uuid
+
 import pytest
 from pydantic import ValidationError
 
@@ -41,6 +42,7 @@ def test_user_response_valid():
 
 def test_user_response_from_attributes():
     """Ensures model_config ConfigDict(from_attributes=True) works with ORM-like objects."""
+
     class DummyUserORM:
         id = uuid.uuid4()
         name = "Sari Viewer"

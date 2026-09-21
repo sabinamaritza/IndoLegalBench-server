@@ -9,6 +9,7 @@ Validates:
 
 import uuid
 from unittest.mock import MagicMock
+
 import pytest
 
 from app.modules.auth.models import User

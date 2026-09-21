@@ -7,8 +7,9 @@ Validates:
 - Field defaults and constraints (id default UUID, timestamps, is_active)
 """
 
-from datetime import datetime, timedelta, timezone
 import uuid
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
@@ -79,7 +80,7 @@ def test_user_sessions_relationship_and_cascade(db_session):
     db_session.add(user)
     db_session.commit()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     sess1 = Session(
         user_id=user.id,
         last_activity_at=now,
@@ -99,7 +100,5 @@ def test_user_sessions_relationship_and_cascade(db_session):
     db_session.delete(user)
     db_session.commit()
 
-    remaining_sessions = (
-        db_session.query(Session).filter(Session.user_id == user.id).all()
-    )
+    remaining_sessions = db_session.query(Session).filter(Session.user_id == user.id).all()
     assert len(remaining_sessions) == 0

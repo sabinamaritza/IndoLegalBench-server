@@ -7,10 +7,10 @@ Isi file ini murni query, tanpa logika bisnis.
 """
 
 import uuid
-from typing import Optional, List
+
 from sqlalchemy.orm import Session as DBSession
 
-from app.modules.auth.models import User, Session
+from app.modules.auth.models import Session, User
 from app.shared.security import Role
 
 
@@ -18,26 +18,20 @@ class AuthRepository:
     def __init__(self, db: DBSession):
         self.db = db
 
-    def get_users(self, is_active: Optional[bool] = None) -> List[User]:
+    def get_users(self, is_active: bool | None = None) -> list[User]:
         query = self.db.query(User)
         if is_active is not None:
             query = query.filter(User.is_active == is_active)
         return query.all()
 
-    def get_user_by_id(self, user_id: uuid.UUID) -> Optional[User]:
+    def get_user_by_id(self, user_id: uuid.UUID) -> User | None:
         return self.db.query(User).filter(User.id == user_id).first()
 
-    def get_user_by_email(self, email: str) -> Optional[User]:
+    def get_user_by_email(self, email: str) -> User | None:
         return self.db.query(User).filter(User.email == email).first()
 
     def create_user(self, name: str, email: str, role: Role, zitadel_sub: str) -> User:
-        user = User(
-            name=name,
-            email=email,
-            role=role,
-            zitadel_sub=zitadel_sub,
-            is_active=True
-        )
+        user = User(name=name, email=email, role=role, zitadel_sub=zitadel_sub, is_active=True)
         self.db.add(user)
         self.db.commit()
         self.db.refresh(user)

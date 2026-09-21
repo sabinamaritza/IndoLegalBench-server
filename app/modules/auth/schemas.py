@@ -5,7 +5,9 @@ berubah, kontrak API ikut berubah, jadi wajib diumumkan ke tim.
 """
 
 import uuid
+
 from pydantic import BaseModel, ConfigDict, EmailStr
+
 from app.shared.security import Role
 
 
