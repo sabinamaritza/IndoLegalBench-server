@@ -23,11 +23,6 @@ class AuthService:
     def list_users(self, is_active: bool | None = None) -> list[User]:
         return self.repo.get_users(is_active=is_active)
 
-    def _verify_user_in_zitadel(self, email: str) -> str | None:
-        if "unregistered" in email:
-            return None
-        return f"zitadel_sub_{email}"
-
     def create_member(self, payload: UserCreateRequest) -> User:
         existing_user = self.repo.get_user_by_email(payload.email)
         if existing_user:
