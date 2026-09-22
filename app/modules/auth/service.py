@@ -29,15 +29,15 @@ class AuthService:
         return f"zitadel_sub_{email}"
 
     def create_member(self, payload: UserCreateRequest) -> User:
-        if self.repo.get_user_by_email(payload.email):
+        existing_user = self.repo.get_user_by_email(payload.email)
+        if existing_user:
             raise ConflictError(f"Email '{payload.email}' already exists")
 
-        zitadel_sub = self._verify_user_in_zitadel(payload.email)
-        if not zitadel_sub:
-            raise ValidationError("User not registered in Zitadel IdP")
-
         return self.repo.create_user(
-            name=payload.name, email=payload.email, role=payload.role, zitadel_sub=zitadel_sub
+            name=payload.name,
+            email=payload.email,
+            role=payload.role,
+            zitadel_sub=None,
         )
 
     def update_member_role(self, user_id: uuid.UUID, payload: UserUpdateRoleRequest) -> User:

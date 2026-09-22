@@ -8,14 +8,14 @@ Isi file ini murni query, tanpa logika bisnis.
 
 import uuid
 
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm import Session
 
-from app.modules.auth.models import Session, User
+from app.modules.auth.models import User, UserSession
 from app.shared.security import Role
 
 
 class AuthRepository:
-    def __init__(self, db: DBSession):
+    def __init__(self, db: Session):
         self.db = db
 
     def get_users(self, is_active: bool | None = None) -> list[User]:
@@ -30,8 +30,20 @@ class AuthRepository:
     def get_user_by_email(self, email: str) -> User | None:
         return self.db.query(User).filter(User.email == email).first()
 
-    def create_user(self, name: str, email: str, role: Role, zitadel_sub: str) -> User:
-        user = User(name=name, email=email, role=role, zitadel_sub=zitadel_sub, is_active=True)
+    def create_user(
+        self,
+        name: str,
+        email: str,
+        role: Role,
+        zitadel_sub: str | None = None,
+    ) -> User:
+        user = User(
+            name=name,
+            email=email,
+            role=role,
+            zitadel_sub=zitadel_sub,
+            is_active=True,
+        )
         self.db.add(user)
         self.db.commit()
         self.db.refresh(user)
@@ -51,8 +63,8 @@ class AuthRepository:
 
     def delete_sessions_by_user_id(self, user_id: uuid.UUID) -> int:
         deleted_count = (
-            self.db.query(Session)
-            .filter(Session.user_id == user_id)
+            self.db.query(UserSession)
+            .filter(UserSession.user_id == user_id)
             .delete(synchronize_session=False)
         )
         self.db.commit()

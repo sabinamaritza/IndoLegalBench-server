@@ -1,115 +1,164 @@
-"""Unit tests for AuthRepository data access using SQLite in-memory.
+"""Unit and integration tests for AuthRepository data access logic.
 
 Validates:
-- get_users (unfiltered and is_active filter)
+- get_users (with and without is_active filter)
 - get_user_by_id and get_user_by_email
-- create_user
+- create_user (storing user with nullable zitadel_sub)
 - update_user_role
-- deactivate_user
-- delete_sessions_by_user_id
+- deactivate_user (non-destructive status toggle)
+- delete_sessions_by_user_id (using UserSession)
 """
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.modules.auth.models import Session
+from app.modules.auth.models import UserSession
 from app.modules.auth.repository import AuthRepository
 from app.shared.database import Base
 from app.shared.security import Role
 
 
 @pytest.fixture
-def in_memory_db():
-    engine = create_engine("sqlite:///:memory:", echo=False)
+def db_session():
+    """Isolated in-memory SQLite database session for repository tests."""
+    engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(bind=engine)
-    session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-    db = session_factory()
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    session = TestingSessionLocal()
     try:
-        yield db
+        yield session
     finally:
-        db.close()
-        Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        session.rollback()
+        session.close()
 
 
 @pytest.fixture
-def repo(in_memory_db):
-    return AuthRepository(in_memory_db)
+def auth_repo(db_session):
+    return AuthRepository(db=db_session)
 
 
-def test_repo_create_and_get_user(repo):
-    user = repo.create_user(
-        name="Alice Author",
-        email="alice@veritask.ai",
+def test_repo_create_user_nullable_zitadel(auth_repo):
+    """Admin-created users should have zitadel_sub set to None."""
+    user = auth_repo.create_user(
+        name="John Doe",
+        email="john@veritask.ai",
         role=Role.AUTHOR,
-        zitadel_sub="sub_alice",
+        zitadel_sub=None,
     )
 
     assert user.id is not None
-    assert user.name == "Alice Author"
-    assert user.email == "alice@veritask.ai"
+    assert user.name == "John Doe"
+    assert user.email == "john@veritask.ai"
     assert user.role == Role.AUTHOR
+    assert user.zitadel_sub is None
     assert user.is_active is True
 
-    fetched_by_id = repo.get_user_by_id(user.id)
-    assert fetched_by_id is not None
-    assert fetched_by_id.email == "alice@veritask.ai"
 
-    fetched_by_email = repo.get_user_by_email("alice@veritask.ai")
-    assert fetched_by_email is not None
-    assert fetched_by_email.id == user.id
+def test_repo_get_user_by_id_and_email(auth_repo):
+    created = auth_repo.create_user(
+        name="Jane Doe",
+        email="jane@veritask.ai",
+        role=Role.REVIEWER,
+    )
 
-    assert repo.get_user_by_email("nonexistent@veritask.ai") is None
+    by_id = auth_repo.get_user_by_id(created.id)
+    assert by_id is not None
+    assert by_id.id == created.id
+    assert by_id.email == "jane@veritask.ai"
+
+    by_email = auth_repo.get_user_by_email("jane@veritask.ai")
+    assert by_email is not None
+    assert by_email.id == created.id
+
+    assert auth_repo.get_user_by_id(uuid.uuid4()) is None
+    assert auth_repo.get_user_by_email("nonexistent@veritask.ai") is None
 
 
-def test_repo_get_users_filtering(repo):
-    user1 = repo.create_user("User One", "one@veritask.ai", Role.AUTHOR, "sub1")
-    user2 = repo.create_user("User Two", "two@veritask.ai", Role.REVIEWER, "sub2")
-    repo.deactivate_user(user2)
+def test_repo_get_users_filtering(auth_repo):
+    u1 = auth_repo.create_user(name="User 1", email="u1@veritask.ai", role=Role.AUTHOR)
+    u2 = auth_repo.create_user(name="User 2", email="u2@veritask.ai", role=Role.REVIEWER)
+    auth_repo.deactivate_user(u2)
 
-    all_users = repo.get_users()
+    # All users
+    all_users = auth_repo.get_users()
     assert len(all_users) == 2
 
-    active_users = repo.get_users(is_active=True)
+    # Active only
+    active_users = auth_repo.get_users(is_active=True)
     assert len(active_users) == 1
-    assert active_users[0].id == user1.id
+    assert active_users[0].id == u1.id
 
-    inactive_users = repo.get_users(is_active=False)
+    # Inactive only
+    inactive_users = auth_repo.get_users(is_active=False)
     assert len(inactive_users) == 1
-    assert inactive_users[0].id == user2.id
+    assert inactive_users[0].id == u2.id
 
 
-def test_repo_update_user_role(repo):
-    user = repo.create_user("Bob", "bob@veritask.ai", Role.VIEWER, "sub_bob")
-    updated_user = repo.update_user_role(user, Role.ADMIN)
-
-    assert updated_user.role == Role.ADMIN
-    assert repo.get_user_by_id(user.id).role == Role.ADMIN
-
-
-def test_repo_deactivate_and_delete_sessions(repo, in_memory_db):
-    user = repo.create_user("Charlie", "charlie@veritask.ai", Role.AUTHOR, "sub_charlie")
-
-    now = datetime.now(UTC)
-    session1 = Session(
-        user_id=user.id,
-        expires_at=now + timedelta(hours=1),
+def test_repo_update_user_role(auth_repo):
+    user = auth_repo.create_user(
+        name="Role Switcher",
+        email="roleswitch@veritask.ai",
+        role=Role.VIEWER,
     )
-    session2 = Session(
-        user_id=user.id,
-        expires_at=now + timedelta(hours=2),
+
+    updated = auth_repo.update_user_role(user, Role.ADMIN)
+    assert updated.role == Role.ADMIN
+
+    # Fetch from fresh query
+    fetched = auth_repo.get_user_by_id(user.id)
+    assert fetched.role == Role.ADMIN
+
+
+def test_repo_deactivate_user(auth_repo):
+    user = auth_repo.create_user(
+        name="To Deactivate",
+        email="deactivate@veritask.ai",
+        role=Role.AUTHOR,
     )
-    in_memory_db.add_all([session1, session2])
-    in_memory_db.commit()
+    assert user.is_active is True
 
-    assert in_memory_db.query(Session).filter(Session.user_id == user.id).count() == 2
-
-    deactivated = repo.deactivate_user(user)
+    deactivated = auth_repo.deactivate_user(user)
     assert deactivated.is_active is False
 
-    deleted_count = repo.delete_sessions_by_user_id(user.id)
+    # Confirm user still exists in database (non-destructive)
+    fetched = auth_repo.get_user_by_id(user.id)
+    assert fetched is not None
+    assert fetched.is_active is False
+
+
+def test_repo_delete_sessions_by_user_id(auth_repo, db_session):
+    user = auth_repo.create_user(
+        name="Session Owner",
+        email="sessions@veritask.ai",
+        role=Role.AUTHOR,
+    )
+
+    expiry = datetime.now(UTC) + timedelta(hours=1)
+
+    # Use actual columns: id, user_id, expires_at (no 'token' field)
+    s1 = UserSession(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        expires_at=expiry,
+    )
+    s2 = UserSession(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        expires_at=expiry,
+    )
+    db_session.add_all([s1, s2])
+    db_session.commit()
+
+    assert db_session.query(UserSession).filter(UserSession.user_id == user.id).count() == 2
+
+    # Delete sessions
+    deleted_count = auth_repo.delete_sessions_by_user_id(user.id)
     assert deleted_count == 2
-    assert in_memory_db.query(Session).filter(Session.user_id == user.id).count() == 0
+
+    # Verify no sessions remain
+    remaining = db_session.query(UserSession).filter(UserSession.user_id == user.id).count()
+    assert remaining == 0
