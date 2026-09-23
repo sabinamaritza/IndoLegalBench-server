@@ -170,18 +170,28 @@ class AuthService:
             zitadel_sub=None,
         )
 
-    def update_member_role(self, user_id: uuid.UUID, payload: UserUpdateRoleRequest) -> User:
+    def update_member_role(
+        self, user_id: uuid.UUID, payload: UserUpdateRoleRequest, current_user: CurrentUser
+    ) -> User:
+        # Together with CANNOT_DEACTIVATE_SELF this keeps at least one active
+        # admin: the one making the request can neither demote nor
+        # deactivate themself.
+        if current_user.user_id == user_id:
+            raise ValidationError(
+                "Anda tidak dapat mengubah peran akun Anda sendiri.",
+                code="CANNOT_CHANGE_OWN_ROLE",
+            )
         user = repository.get_user_by_id(self.db, user_id)
         if not user:
             raise NotFoundError("User not found")
         return repository.update_user_role(self.db, user, payload.role)
 
-    def deactivate_member(
-        self, target_user_id: uuid.UUID, current_user: CurrentUser | User
-    ) -> User:
-        actor_id = getattr(current_user, "user_id", getattr(current_user, "id", None))
-        if str(actor_id) == str(target_user_id):
-            raise ValidationError("CANNOT_DEACTIVATE_SELF", code="CANNOT_DEACTIVATE_SELF")
+    def deactivate_member(self, target_user_id: uuid.UUID, current_user: CurrentUser) -> User:
+        if current_user.user_id == target_user_id:
+            raise ValidationError(
+                "Anda tidak dapat menonaktifkan akun Anda sendiri.",
+                code="CANNOT_DEACTIVATE_SELF",
+            )
 
         user = repository.get_user_by_id(self.db, target_user_id)
         if not user:

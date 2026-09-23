@@ -6,7 +6,7 @@ berubah, kontrak API ikut berubah, jadi wajib diumumkan ke tim.
 
 import uuid
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.shared.security import Role
 
@@ -14,7 +14,9 @@ from app.shared.security import Role
 class UserResponse(BaseModel):
     id: uuid.UUID
     name: str
-    email: EmailStr
+    # Plain str, not EmailStr: this is stored data going out, and EmailStr would
+    # 500 the whole list on any row email-validator dislikes (e.g. `.test` seeds).
+    email: str
     role: Role
     is_active: bool
 
@@ -23,8 +25,21 @@ class UserResponse(BaseModel):
 
 class UserCreateRequest(BaseModel):
     email: EmailStr
-    name: str
+    name: str = Field(min_length=1, max_length=255)
     role: Role
+
+    @field_validator("email")
+    @classmethod
+    def _lowercase_email(cls, value: str) -> str:
+        return value.lower()
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("name must not be blank")
+        return value
 
 
 class UserUpdateRoleRequest(BaseModel):

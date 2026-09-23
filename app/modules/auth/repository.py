@@ -9,33 +9,36 @@ Isi file ini murni query, tanpa logika bisnis.
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session as DbSession
 
 from app.modules.auth.models import User, UserSession
 from app.shared.security import Role
 
 
-def get_user_by_sub(db: Session, zitadel_sub: str) -> User | None:
+def get_user_by_sub(db: DbSession, zitadel_sub: str) -> User | None:
     return db.query(User).filter(User.zitadel_sub == zitadel_sub).first()
 
 
-def get_user_by_email(db: Session, email: str) -> User | None:
-    return db.query(User).filter(User.email == email).first()
+def get_user_by_email(db: DbSession, email: str) -> User | None:
+    # Case-insensitive: Zitadel may send `Staff10@...` for a row stored as
+    # `staff10@...`, and an exact match would answer USER_NOT_REGISTERED.
+    return db.query(User).filter(func.lower(User.email) == email.lower()).first()
 
 
-def get_user_by_id(db: Session, user_id: uuid.UUID) -> User | None:
+def get_user_by_id(db: DbSession, user_id: uuid.UUID) -> User | None:
     return db.get(User, user_id)
 
 
-def get_users(db: Session, is_active: bool | None = None) -> list[User]:
+def get_users(db: DbSession, is_active: bool | None = None) -> list[User]:
     query = db.query(User)
     if is_active is not None:
         query = query.filter(User.is_active == is_active)
-    return query.all()
+    return query.order_by(User.name, User.email).all()
 
 
 def create_user(
-    db: Session,
+    db: DbSession,
     *,
     name: str,
     email: str,
@@ -55,7 +58,7 @@ def create_user(
     return user
 
 
-def update_user_role(db: Session, user: User, role: Role) -> User:
+def update_user_role(db: DbSession, user: User, role: Role) -> User:
     user.role = role
     db.commit()
     db.refresh(user)
@@ -63,7 +66,7 @@ def update_user_role(db: Session, user: User, role: Role) -> User:
 
 
 def update_user_profile(
-    db: Session,
+    db: DbSession,
     user: User,
     *,
     name: str | None,
@@ -84,7 +87,7 @@ def update_user_profile(
 
 
 def assign_zitadel_sub(
-    db: Session, user: User, zitadel_sub: str, *, now: datetime | None = None
+    db: DbSession, user: User, zitadel_sub: str, *, now: datetime | None = None
 ) -> User:
     user.zitadel_sub = zitadel_sub
     user.updated_at = now or datetime.now(UTC)
@@ -93,7 +96,7 @@ def assign_zitadel_sub(
     return user
 
 
-def deactivate_user(db: Session, user: User) -> User:
+def deactivate_user(db: DbSession, user: User) -> User:
     user.is_active = False
     db.commit()
     db.refresh(user)
@@ -101,7 +104,7 @@ def deactivate_user(db: Session, user: User) -> User:
 
 
 def create_session(
-    db: Session,
+    db: DbSession,
     *,
     user_id: uuid.UUID,
     expires_at: datetime,
@@ -124,11 +127,11 @@ def create_session(
     return session
 
 
-def get_session(db: Session, session_id: uuid.UUID) -> UserSession | None:
+def get_session(db: DbSession, session_id: uuid.UUID) -> UserSession | None:
     return db.get(UserSession, session_id)
 
 
-def delete_session(db: Session, session_id: uuid.UUID) -> None:
+def delete_session(db: DbSession, session_id: uuid.UUID) -> None:
     session = db.get(UserSession, session_id)
     if session is None:
         return
@@ -136,7 +139,7 @@ def delete_session(db: Session, session_id: uuid.UUID) -> None:
     db.commit()
 
 
-def delete_sessions_by_user_id(db: Session, user_id: uuid.UUID) -> int:
+def delete_sessions_by_user_id(db: DbSession, user_id: uuid.UUID) -> int:
     deleted_count = (
         db.query(UserSession)
         .filter(UserSession.user_id == user_id)
@@ -147,7 +150,7 @@ def delete_sessions_by_user_id(db: Session, user_id: uuid.UUID) -> int:
 
 
 def update_session_activity(
-    db: Session,
+    db: DbSession,
     session: UserSession,
     *,
     last_activity_at: datetime,

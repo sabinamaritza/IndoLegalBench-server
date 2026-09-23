@@ -179,9 +179,10 @@ def create_user(payload: UserCreateRequest, service: AuthService = Depends(get_a
 def update_user_role(
     user_id: UUID,
     payload: UserUpdateRoleRequest,
+    current_user: CurrentUser = Depends(get_current_user),
     service: AuthService = Depends(get_auth_service),
 ):
-    return service.update_member_role(user_id, payload)
+    return service.update_member_role(user_id, payload, current_user=current_user)
 
 
 @admin_router.post("/{user_id}/deactivate", response_model=UserResponse)

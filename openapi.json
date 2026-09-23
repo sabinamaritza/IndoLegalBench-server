@@ -942,6 +942,8 @@
           },
           "name": {
             "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
             "title": "Name"
           },
           "role": {
@@ -969,7 +971,6 @@
           },
           "email": {
             "type": "string",
-            "format": "email",
             "title": "Email"
           },
           "role": {

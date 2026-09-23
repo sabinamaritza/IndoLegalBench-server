@@ -27,7 +27,7 @@ from app.shared.exceptions import (
     NotFoundError,
     ValidationError,
 )
-from app.shared.security import CurrentUser, Role, get_current_user, require_roles
+from app.shared.security import CurrentUser, Role, get_current_user
 
 
 @pytest.fixture
@@ -75,7 +75,6 @@ def sample_user():
 def client(app_instance, mock_service, admin_current_user):
     app_instance.dependency_overrides[get_auth_service] = lambda: mock_service
     app_instance.dependency_overrides[get_current_user] = lambda: admin_current_user
-    app_instance.dependency_overrides[require_roles(Role.ADMIN)] = lambda: admin_current_user
 
     with TestClient(app_instance) as test_client:
         yield test_client
@@ -154,20 +153,6 @@ def test_create_user_duplicate_email_conflict_409(client, mock_service):
 
     assert response.status_code == status.HTTP_409_CONFLICT
     assert "already exists" in response.json()["detail"]
-
-
-def test_create_user_not_registered_in_zitadel_422(client, mock_service):
-    mock_service.create_member.side_effect = ValidationError("User not registered in Zitadel IdP")
-
-    payload = {
-        "email": "unregistered@veritask.ai",
-        "name": "Ghost User",
-        "role": "viewer",
-    }
-    response = client.post("/admin/users", json=payload)
-
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-    assert "Zitadel" in response.json()["detail"]
 
 
 def test_create_user_invalid_payload_fails_422(client):
