@@ -23,18 +23,43 @@ def get_user_by_email(db: Session, email: str) -> User | None:
     return db.query(User).filter(User.email == email).first()
 
 
-def assign_zitadel_sub(
-    db: Session, user: User, zitadel_sub: str, *, now: datetime | None = None
+def get_user_by_id(db: Session, user_id: uuid.UUID) -> User | None:
+    return db.get(User, user_id)
+
+
+def get_users(db: Session, is_active: bool | None = None) -> list[User]:
+    query = db.query(User)
+    if is_active is not None:
+        query = query.filter(User.is_active == is_active)
+    return query.all()
+
+
+def create_user(
+    db: Session,
+    *,
+    name: str,
+    email: str,
+    role: Role,
+    zitadel_sub: str | None = None,
 ) -> User:
-    user.zitadel_sub = zitadel_sub
-    user.updated_at = now or datetime.now(UTC)
+    user = User(
+        name=name,
+        email=email,
+        role=role,
+        zitadel_sub=zitadel_sub,
+        is_active=True,
+    )
+    db.add(user)
     db.commit()
     db.refresh(user)
     return user
 
 
-def get_user_by_id(db:Session, user_id: uuid.UUID) -> User | None:
-    return db.get(User, user_id)
+def update_user_role(db: Session, user: User, role: Role) -> User:
+    user.role = role
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 def update_user_profile(
@@ -53,6 +78,23 @@ def update_user_profile(
     if email:
         user.email = email
     user.updated_at = now or datetime.now(UTC)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def assign_zitadel_sub(
+    db: Session, user: User, zitadel_sub: str, *, now: datetime | None = None
+) -> User:
+    user.zitadel_sub = zitadel_sub
+    user.updated_at = now or datetime.now(UTC)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def deactivate_user(db: Session, user: User) -> User:
+    user.is_active = False
     db.commit()
     db.refresh(user)
     return user
@@ -82,7 +124,7 @@ def create_session(
     return session
 
 
-def get_session(db:Session, session_id: uuid.UUID) -> UserSession | None:
+def get_session(db: Session, session_id: uuid.UUID) -> UserSession | None:
     session = db.get(UserSession, session_id)
     if session is None:
         return None
@@ -98,12 +140,22 @@ def get_session(db:Session, session_id: uuid.UUID) -> UserSession | None:
     return session
 
 
-def delete_session(db:Session, session_id: uuid.UUID) -> None:
+def delete_session(db: Session, session_id: uuid.UUID) -> None:
     session = db.get(UserSession, session_id)
     if session is None:
         return
     db.delete(session)
     db.commit()
+
+
+def delete_sessions_by_user_id(db: Session, user_id: uuid.UUID) -> int:
+    deleted_count = (
+        db.query(UserSession)
+        .filter(UserSession.user_id == user_id)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return deleted_count
 
 
 def touch_session(
@@ -117,59 +169,3 @@ def touch_session(
     db.commit()
     db.refresh(session)
     return session
-
-class AuthRepository:
-    def __init__(self, db: Session):
-        self.db = db
-
-    def get_users(self, is_active: bool | None = None) -> list[User]:
-        query = self.db.query(User)
-        if is_active is not None:
-            query = query.filter(User.is_active == is_active)
-        return query.all()
-
-    def get_user_by_id(self, user_id: uuid.UUID) -> User | None:
-        return self.db.query(User).filter(User.id == user_id).first()
-
-    def get_user_by_email(self, email: str) -> User | None:
-        return self.db.query(User).filter(User.email == email).first()
-
-    def create_user(
-        self,
-        name: str,
-        email: str,
-        role: Role,
-        zitadel_sub: str | None = None,
-    ) -> User:
-        user = User(
-            name=name,
-            email=email,
-            role=role,
-            zitadel_sub=zitadel_sub,
-            is_active=True,
-        )
-        self.db.add(user)
-        self.db.commit()
-        self.db.refresh(user)
-        return user
-
-    def update_user_role(self, user: User, role: Role) -> User:
-        user.role = role
-        self.db.commit()
-        self.db.refresh(user)
-        return user
-
-    def deactivate_user(self, user: User) -> User:
-        user.is_active = False
-        self.db.commit()
-        self.db.refresh(user)
-        return user
-
-    def delete_sessions_by_user_id(self, user_id: uuid.UUID) -> int:
-        deleted_count = (
-            self.db.query(UserSession)
-            .filter(UserSession.user_id == user_id)
-            .delete(synchronize_session=False)
-        )
-        self.db.commit()
-        return deleted_count

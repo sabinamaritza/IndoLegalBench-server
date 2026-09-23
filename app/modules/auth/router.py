@@ -16,13 +16,18 @@ from sqlalchemy.orm import Session
 from app.modules.auth import service
 from app.modules.auth.cookies import clear_session_cookie, set_session_cookie
 from app.modules.auth.oidc import OidcClient, get_oidc_client
-from app.modules.auth.schemas import ErrorBody, MeResponse, UserCreateRequest, UserResponse, UserUpdateRoleRequest
+from app.modules.auth.schemas import (
+    ErrorBody,
+    MeResponse,
+    UserCreateRequest,
+    UserResponse,
+    UserUpdateRoleRequest,
+)
 from app.modules.auth.service import AuthService
 from app.shared.config import get_settings
 from app.shared.database import get_db
 from app.shared.exceptions import DomainError, UnauthenticatedError
 from app.shared.security import CurrentUser, Role, get_current_user, require_roles
-
 
 router = APIRouter()
 
@@ -137,10 +142,10 @@ def logout(
     summary="Landing lokal setelah login",
     responses=_SESSION_RESPONSES,
 )
-
 def auth_done(request: Request, db: Session = Depends(get_db)) -> MeResponse:
     """Same payload as /me. Used when there is no frontend on :3000."""
     return me(request, db)
+
 
 @auth_router.get(
     "/me",
@@ -159,8 +164,10 @@ admin_router = APIRouter(
     prefix="/admin/users", tags=["Admin Members"], dependencies=[Depends(require_roles(Role.ADMIN))]
 )
 
+
 def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
     return AuthService(db)
+
 
 @admin_router.get("", response_model=list[UserResponse])
 def get_users(
@@ -168,9 +175,11 @@ def get_users(
 ):
     return service.list_users(is_active=is_active)
 
+
 @admin_router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(payload: UserCreateRequest, service: AuthService = Depends(get_auth_service)):
     return service.create_member(payload)
+
 
 @admin_router.patch("/{user_id}", response_model=UserResponse)
 def update_user_role(
@@ -180,6 +189,7 @@ def update_user_role(
 ):
     return service.update_member_role(user_id, payload)
 
+
 @admin_router.post("/{user_id}/deactivate", response_model=UserResponse)
 def deactivate_user(
     user_id: UUID,
@@ -187,6 +197,7 @@ def deactivate_user(
     service: AuthService = Depends(get_auth_service),
 ):
     return service.deactivate_member(target_user_id=user_id, current_user=current_user)
+
 
 router.include_router(auth_router)
 router.include_router(admin_router)

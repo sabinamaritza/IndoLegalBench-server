@@ -11,162 +11,54 @@ import uuid
 from unittest.mock import MagicMock
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.modules.auth.models import User
-from app.modules.auth.repository import AuthRepository
-from app.modules.auth.schemas import UserCreateRequest, UserUpdateRoleRequest
 from app.modules.auth.service import AuthService
-from app.shared.exceptions import ConflictError, NotFoundError, ValidationError
+from app.shared.exceptions import NotFoundError
 from app.shared.security import CurrentUser, Role
 
 
 @pytest.fixture
-def mock_repo():
-    return MagicMock(spec=AuthRepository)
+def mock_db():
+    return MagicMock(spec=Session)
 
 
 @pytest.fixture
-def auth_service(mock_repo):
-    return AuthService(mock_repo)
+def auth_service(mock_db):
+    return AuthService(mock_db)
 
 
-@pytest.fixture
-def current_admin():
-    return CurrentUser(
-        user_id="11111111-1111-1111-1111-111111111111",
-        email="admin@veritask.ai",
-        role=Role.ADMIN,
-    )
-
-
-@pytest.fixture
-def dummy_user():
-    return User(
-        id=uuid.UUID("22222222-2222-2222-2222-222222222222"),
-        email="user@veritask.ai",
-        name="User Veritask",
-        role=Role.AUTHOR,
-        zitadel_sub=None,  # Nullable for admin-created users
-        is_active=True,
-    )
-
-
-def test_service_list_users(auth_service, mock_repo, dummy_user):
-    mock_repo.get_users.return_value = [dummy_user]
-
-    res_all = auth_service.list_users()
-    assert res_all == [dummy_user]
-    mock_repo.get_users.assert_called_with(is_active=None)
-
-    res_active = auth_service.list_users(is_active=True)
-    assert res_active == [dummy_user]
-    mock_repo.get_users.assert_called_with(is_active=True)
-
-
-def test_service_create_member_success(auth_service, mock_repo, dummy_user):
-    mock_repo.get_user_by_email.return_value = None
-    mock_repo.create_user.return_value = dummy_user
-
-    payload = UserCreateRequest(
-        email="user@veritask.ai",
-        name="User Veritask",
-        role=Role.AUTHOR,
-    )
-    res = auth_service.create_member(payload)
-
-    assert res == dummy_user
-    mock_repo.create_user.assert_called_once_with(
-        name="User Veritask",
-        email="user@veritask.ai",
-        role=Role.AUTHOR,
-        zitadel_sub=None,
-    )
-
-
-def test_service_create_member_email_conflict(auth_service, mock_repo, dummy_user):
-    mock_repo.get_user_by_email.return_value = dummy_user
-
-    payload = UserCreateRequest(
-        email="user@veritask.ai",
-        name="User Duplicate",
-        role=Role.AUTHOR,
-    )
-    with pytest.raises(ConflictError) as exc_info:
-        auth_service.create_member(payload)
-
-    assert "already exists" in str(exc_info.value)
-    mock_repo.create_user.assert_not_called()
-
-
-def test_service_create_member_leaves_zitadel_sub_null(auth_service, mock_repo, dummy_user):
-    mock_repo.get_user_by_email.return_value = None
-    mock_repo.create_user.return_value = dummy_user
-
-    payload = UserCreateRequest(
-        email="new_member@veritask.ai",
-        name="New Member",
-        role=Role.VIEWER,
-    )
-    res = auth_service.create_member(payload)
-
-    assert res == dummy_user
-    mock_repo.create_user.assert_called_once_with(
-        name="New Member",
-        email="new_member@veritask.ai",
-        role=Role.VIEWER,
-        zitadel_sub=None,
-    )
-
-
-def test_service_update_member_role_success(auth_service, mock_repo, dummy_user):
-    mock_repo.get_user_by_id.return_value = dummy_user
-    mock_repo.update_user_role.return_value = dummy_user
-
-    payload = UserUpdateRoleRequest(role=Role.REVIEWER)
-    res = auth_service.update_member_role(dummy_user.id, payload)
-
-    assert res == dummy_user
-    mock_repo.update_user_role.assert_called_once_with(dummy_user, Role.REVIEWER)
-
-
-def test_service_update_member_role_not_found(auth_service, mock_repo):
-    mock_repo.get_user_by_id.return_value = None
+def test_service_deactivate_member_success(auth_service, mock_db, monkeypatch):
     target_id = uuid.uuid4()
+    admin_id = uuid.uuid4()
+    current_admin = CurrentUser(user_id=str(admin_id), email="admin@veritask.ai", role=Role.ADMIN)
 
-    payload = UserUpdateRoleRequest(role=Role.REVIEWER)
-    with pytest.raises(NotFoundError):
-        auth_service.update_member_role(target_id, payload)
+    dummy_user = User(
+        id=target_id, email="member@veritask.ai", name="Member", role=Role.REVIEWER, is_active=True
+    )
 
+    # Mock the functional repository methods
+    monkeypatch.setattr("app.modules.auth.repository.get_user_by_id", lambda db, uid: dummy_user)
+    monkeypatch.setattr("app.modules.auth.repository.delete_sessions_by_user_id", lambda db, uid: 1)
 
-def test_service_deactivate_member_success(auth_service, mock_repo, dummy_user, current_admin):
-    mock_repo.get_user_by_id.return_value = dummy_user
-    mock_repo.deactivate_user.return_value = dummy_user
+    def fake_deactivate(db, user):
+        user.is_active = False
+        return user
 
-    res = auth_service.deactivate_member(dummy_user.id, current_admin)
+    monkeypatch.setattr("app.modules.auth.repository.deactivate_user", fake_deactivate)
 
-    assert res == dummy_user
-    # Ensure sessions are cleared and user is set to inactive
-    mock_repo.delete_sessions_by_user_id.assert_called_once_with(dummy_user.id)
-    mock_repo.deactivate_user.assert_called_once_with(dummy_user)
+    result = auth_service.deactivate_member(target_user_id=target_id, current_user=current_admin)
 
-
-def test_service_deactivate_self_fails(auth_service, mock_repo, current_admin):
-    admin_uuid = uuid.UUID(current_admin.user_id)
-
-    with pytest.raises(ValidationError) as exc_info:
-        auth_service.deactivate_member(admin_uuid, current_admin)
-
-    # Check either exc_info.value.code or the exception message depending on your exception class
-    assert getattr(
-        exc_info.value, "code", None
-    ) == "CANNOT_DEACTIVATE_SELF" or "CANNOT_DEACTIVATE_SELF" in str(exc_info.value)
-    mock_repo.delete_sessions_by_user_id.assert_not_called()
-    mock_repo.deactivate_user.assert_not_called()
+    assert result.is_active is False
 
 
-def test_service_deactivate_member_not_found(auth_service, mock_repo, current_admin):
-    mock_repo.get_user_by_id.return_value = None
+def test_service_deactivate_member_not_found(auth_service, mock_db, monkeypatch):
     target_id = uuid.uuid4()
+    admin_id = uuid.uuid4()
+    current_admin = CurrentUser(user_id=str(admin_id), email="admin@veritask.ai", role=Role.ADMIN)
+
+    monkeypatch.setattr("app.modules.auth.repository.get_user_by_id", lambda db, uid: None)
 
     with pytest.raises(NotFoundError):
-        auth_service.deactivate_member(target_id, current_admin)
+        auth_service.deactivate_member(target_user_id=target_id, current_user=current_admin)

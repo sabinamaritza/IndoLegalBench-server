@@ -18,7 +18,6 @@ from app.modules.auth.models import User
 from app.modules.auth.oidc import OidcClient
 from app.modules.auth.pending import pending_store
 from app.modules.auth.pkce import code_challenge_s256, generate_code_verifier, generate_nonce
-from app.modules.auth.repository import AuthRepository
 from app.modules.auth.schemas import MeResponse, UserCreateRequest, UserUpdateRoleRequest
 from app.shared.config import get_settings
 from app.shared.exceptions import (
@@ -28,9 +27,9 @@ from app.shared.exceptions import (
     UnauthenticatedError,
     UserDeactivatedError,
     UserNotRegisteredError,
-    ValidationError
+    ValidationError,
 )
-from app.shared.security import Role, CurrentUser
+from app.shared.security import CurrentUser, Role
 
 
 @dataclass(frozen=True)
@@ -126,19 +125,21 @@ def get_me(db: DbSession, *, session_id: uuid.UUID) -> MeResponse:
         raise UnauthenticatedError("Authentication required.")
     return MeResponse(id=user.id, name=user.name, email=user.email, role=Role(user.role))
 
+
 class AuthService:
-    def __init__(self, repo: AuthRepository):
-        self.repo = repo
+    def __init__(self, db: DbSession):
+        self.db = db
 
     def list_users(self, is_active: bool | None = None) -> list[User]:
-        return self.repo.get_users(is_active=is_active)
+        return repository.get_users(self.db, is_active=is_active)
 
     def create_member(self, payload: UserCreateRequest) -> User:
-        existing_user = self.repo.get_user_by_email(payload.email)
+        existing_user = repository.get_user_by_email(self.db, payload.email)
         if existing_user:
             raise ConflictError(f"Email '{payload.email}' already exists")
 
-        return self.repo.create_user(
+        return repository.create_user(
+            self.db,
             name=payload.name,
             email=payload.email,
             role=payload.role,
@@ -146,19 +147,21 @@ class AuthService:
         )
 
     def update_member_role(self, user_id: uuid.UUID, payload: UserUpdateRoleRequest) -> User:
-        user = self.repo.get_user_by_id(user_id)
+        user = repository.get_user_by_id(self.db, user_id)
         if not user:
             raise NotFoundError("User not found")
-        return self.repo.update_user_role(user, payload.role)
+        return repository.update_user_role(self.db, user, payload.role)
 
-    def deactivate_member(self, target_user_id: uuid.UUID, current_user: CurrentUser) -> User:
-        if str(current_user.user_id) == str(target_user_id):
+    def deactivate_member(
+        self, target_user_id: uuid.UUID, current_user: CurrentUser | User
+    ) -> User:
+        actor_id = getattr(current_user, "user_id", getattr(current_user, "id", None))
+        if str(actor_id) == str(target_user_id):
             raise ValidationError("CANNOT_DEACTIVATE_SELF", code="CANNOT_DEACTIVATE_SELF")
 
-        user = self.repo.get_user_by_id(target_user_id)
+        user = repository.get_user_by_id(self.db, target_user_id)
         if not user:
             raise NotFoundError("User not found")
 
-        self.repo.delete_sessions_by_user_id(user.id)
-        return self.repo.deactivate_user(user)
-    
+        repository.delete_sessions_by_user_id(self.db, user.id)
+        return repository.deactivate_user(self.db, user)
