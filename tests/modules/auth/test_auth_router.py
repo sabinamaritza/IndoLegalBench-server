@@ -53,7 +53,8 @@ def mock_service():
 @pytest.fixture
 def admin_current_user():
     return CurrentUser(
-        user_id="11111111-1111-1111-1111-111111111111",
+        user_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
+        name="Admin",
         email="admin@veritask.ai",
         role=Role.ADMIN,
     )
@@ -251,6 +252,7 @@ def test_unauthenticated_request_rejected_401(app_instance, mock_service):
 def test_non_admin_roles_rejected_403(app_instance, mock_service, forbidden_role):
     non_admin_user = CurrentUser(
         user_id=str(uuid.uuid4()),
+        name="Member",
         email="user@veritask.ai",
         role=forbidden_role,
     )

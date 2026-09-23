@@ -32,7 +32,9 @@ def auth_service(mock_db):
 def test_service_deactivate_member_success(auth_service, mock_db, monkeypatch):
     target_id = uuid.uuid4()
     admin_id = uuid.uuid4()
-    current_admin = CurrentUser(user_id=str(admin_id), email="admin@veritask.ai", role=Role.ADMIN)
+    current_admin = CurrentUser(
+        user_id=admin_id, name="Admin", email="admin@veritask.ai", role=Role.ADMIN
+    )
 
     dummy_user = User(
         id=target_id, email="member@veritask.ai", name="Member", role=Role.REVIEWER, is_active=True
@@ -56,7 +58,9 @@ def test_service_deactivate_member_success(auth_service, mock_db, monkeypatch):
 def test_service_deactivate_member_not_found(auth_service, mock_db, monkeypatch):
     target_id = uuid.uuid4()
     admin_id = uuid.uuid4()
-    current_admin = CurrentUser(user_id=str(admin_id), email="admin@veritask.ai", role=Role.ADMIN)
+    current_admin = CurrentUser(
+        user_id=admin_id, name="Admin", email="admin@veritask.ai", role=Role.ADMIN
+    )
 
     monkeypatch.setattr("app.modules.auth.repository.get_user_by_id", lambda db, uid: None)
 
